@@ -81,82 +81,94 @@ def create_folder_name(title, idx):
     
     return folder_name
 
-def scrape_avito():
-    """Scrape les annonces de voitures sur Avito avec conversion des dates."""
-    url = "https://www.avito.ma/fr/maroc/voitures_d'occasion-à_vendre"
+def scrape_avito(pages=3):
+    """Scrape the car listings on Avito across multiple pages."""
+    base_url = "https://www.avito.ma/fr/maroc/v%C3%A9hicules"
     driver = setup_driver()
-    driver.get(url)
-    driver.set_page_load_timeout(180)  # Increase timeout duration
-
-
-    # ✅ Attendre que la page se charge correctement
-    try:
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "sc-1nre5ec-1")))
-    except Exception as e:
-        print(f"❌ Timeout: Impossible de charger la page ({e})")
-        driver.quit()
-        return None
-
-    data = []
     
-    try:
-        # **Trouver le conteneur principal**
-        main_container = driver.find_element(By.CLASS_NAME, "sc-1nre5ec-1")
+    data = []
+    listing_id_counter = 1  # Initialize the global ID counter
 
-        # **Récupérer toutes les annonces**
-        listings = main_container.find_elements(By.CSS_SELECTOR, "a.sc-1jge648-0.jZXrfL")
+    # Loop through the first `pages` pages
+    for page in range(1, pages + 1):
+        url = f"{base_url}?o={page}"
+        print(f"🔎 Scraping page {page}: {url}")
+        
+        driver.get(url)
+        driver.set_page_load_timeout(180)  # Increase timeout duration
 
-        if not listings:
-            print("❌ Aucune annonce trouvée ! Vérifie si le site a changé.")
+        # ✅ Wait for the page to load correctly
+        try:
+            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "sc-1nre5ec-1")))
+        except Exception as e:
+            print(f"❌ Timeout: Impossible de charger la page ({e})")
             driver.quit()
             return None
 
-        print(f"✅ {len(listings)} annonces trouvées !")
+        try:
+            # Ensure all content is loaded by scrolling to the bottom
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(3)  # Wait for additional content to load
 
-        # **Parcourir les annonces**
-        for idx, listing in enumerate(listings, start=1):
-            try:
-                # **Titre**
-                title = listing.find_element(By.CSS_SELECTOR, "p.sc-1x0vz2r-0.iHApav").text.strip() if listing.find_elements(By.CSS_SELECTOR, "p.sc-1x0vz2r-0.iHApav") else "N/A"
+            # **Find the main container**
+            main_container = driver.find_element(By.CLASS_NAME, "sc-1nre5ec-1")
 
-                # **Prix**
-                price = listing.find_element(By.CSS_SELECTOR, "p.sc-1x0vz2r-0.dJAfqm").text.strip() if listing.find_elements(By.CSS_SELECTOR, "p.sc-1x0vz2r-0.dJAfqm") else "Prix non spécifié"
+            # **Get all listings on the page**
+            listings = main_container.find_elements(By.CSS_SELECTOR, "a.sc-1jge648-0.jZXrfL")
 
-                # **Date de publication**
-                pub_date_raw = listing.find_element(By.CSS_SELECTOR, "p.sc-1x0vz2r-0.layWaX").text.strip() if listing.find_elements(By.CSS_SELECTOR, "p.sc-1x0vz2r-0.layWaX") else "N/A"
-                pub_date = convert_relative_date(pub_date_raw)  # Convertir en date exacte
+            if not listings:
+                print("❌ Aucune annonce trouvée ! Vérifie si le site a changé.")
+                driver.quit()
+                return None
 
-                # **Année**
-                year = listing.find_element(By.XPATH, ".//span[contains(text(),'20')]").text.strip() if listing.find_elements(By.XPATH, ".//span[contains(text(),'20')]") else "N/A"
+            print(f"✅ {len(listings)} annonces trouvées sur la page {page} !")
 
-                # **Type de carburant**
-                fuel_type = listing.find_element(By.XPATH, ".//span[contains(text(),'Essence') or contains(text(),'Diesel') or contains(text(),'Hybride') or contains(text(),'Électrique')]").text.strip() if listing.find_elements(By.XPATH, ".//span[contains(text(),'Essence') or contains(text(),'Diesel') or contains(text(),'Hybride') or contains(text(),'Électrique')]") else "N/A"
-
-                # **Transmission**
-                transmission = listing.find_element(By.XPATH, ".//span[contains(text(),'Automatique') or contains(text(),'Manuelle')]").text.strip() if listing.find_elements(By.XPATH, ".//span[contains(text(),'Automatique') or contains(text(),'Manuelle')]") else "N/A"
-
-                # **Lien de l'annonce**
-                link = listing.get_attribute("href") if listing.get_attribute("href") else "N/A"
-
-                # **Nom du créateur**
-                creator = "Particulier"
+            # **Iterate through the listings**
+            for listing in listings:
                 try:
-                    creator_element = listing.find_element(By.CSS_SELECTOR, "p.sc-1x0vz2r-0.hNCqYw.sc-1wnmz4-5.dXzQnB")
-                    creator = creator_element.text.strip() if creator_element else "Particulier"
-                except:
-                    pass  # Si aucun nom trouvé, on met "Particulier" par défaut
+                    # **Title**
+                    title = listing.find_element(By.CSS_SELECTOR, "p.sc-1x0vz2r-0.iHApav").text.strip() if listing.find_elements(By.CSS_SELECTOR, "p.sc-1x0vz2r-0.iHApav") else "N/A"
 
-                # Create folder name for this listing
-                folder_name = create_folder_name(title, idx)
+                    # **Price**
+                    price = listing.find_element(By.CSS_SELECTOR, "p.sc-1x0vz2r-0.dJAfqm").text.strip() if listing.find_elements(By.CSS_SELECTOR, "p.sc-1x0vz2r-0.dJAfqm") else "Prix non spécifié"
 
-                # **Sauvegarde des données**
-                data.append([idx, title, price, pub_date, year, fuel_type, transmission, creator, link, folder_name])
+                    # **Publication date**
+                    pub_date_raw = listing.find_element(By.CSS_SELECTOR, "p.sc-1x0vz2r-0.layWaX").text.strip() if listing.find_elements(By.CSS_SELECTOR, "p.sc-1x0vz2r-0.layWaX") else "N/A"
+                    pub_date = convert_relative_date(pub_date_raw)  # Convert to exact date
 
-            except Exception as e:
-                print(f"⚠️ Erreur avec l'annonce {idx}: {e}")
+                    # **Year**
+                    year = listing.find_element(By.XPATH, ".//span[contains(text(),'20')]").text.strip() if listing.find_elements(By.XPATH, ".//span[contains(text(),'20')]") else "N/A"
 
-    except Exception as e:
-        print(f"❌ Erreur lors de l'extraction: {e}")
+                    # **Fuel type**
+                    fuel_type = listing.find_element(By.XPATH, ".//span[contains(text(),'Essence') or contains(text(),'Diesel') or contains(text(),'Hybride') or contains(text(),'Électrique')]").text.strip() if listing.find_elements(By.XPATH, ".//span[contains(text(),'Essence') or contains(text(),'Diesel') or contains(text(),'Hybride') or contains(text(),'Électrique')]") else "N/A"
+
+                    # **Transmission**
+                    transmission = listing.find_element(By.XPATH, ".//span[contains(text(),'Automatique') or contains(text(),'Manuelle')]").text.strip() if listing.find_elements(By.XPATH, ".//span[contains(text(),'Automatique') or contains(text(),'Manuelle')]") else "N/A"
+
+                    # **Listing link**
+                    link = listing.get_attribute("href") if listing.get_attribute("href") else "N/A"
+
+                    # **Creator**
+                    creator = "Particulier"
+                    try:
+                        creator_element = listing.find_element(By.CSS_SELECTOR, "p.sc-1x0vz2r-0.hNCqYw.sc-1wnmz4-5.dXzQnB")
+                        creator = creator_element.text.strip() if creator_element else "Particulier"
+                    except:
+                        pass  # If no name found, set to "Particulier" by default
+
+                    # Create folder name for this listing
+                    folder_name = create_folder_name(title, listing_id_counter)
+
+                    # **Save data**
+                    data.append([listing_id_counter, title, price, pub_date, year, fuel_type, transmission, creator, link, folder_name])
+
+                    listing_id_counter += 1  # Increment the global counter after each listing
+
+                except Exception as e:
+                    print(f"⚠️ Erreur avec l'annonce: {e}")
+
+        except Exception as e:
+            print(f"❌ Erreur lors de l'extraction de la page {page}: {e}")
 
     driver.quit()
 
@@ -364,7 +376,7 @@ def main():
     
     # Step 1: Scrape basic listings
     print("\n📋 STEP 1: Scraping basic car listings...")
-    basic_data = scrape_avito()
+    basic_data = scrape_avito(pages=3)
     
     if basic_data is None or len(basic_data) == 0:
         print("❌ No data found. Exiting program.")
